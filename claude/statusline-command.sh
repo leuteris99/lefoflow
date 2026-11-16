@@ -26,9 +26,13 @@ input=$(cat)
 
 # USD per 1M tokens per model: [input, output, cache_read]; matched by id prefix, longest first.
 # Calls with usage.speed == "fast" are priced from fast_models (falling back to models).
+# long_prompt: models with a second rate card for prompts (input + cache write + cache read)
+# above "threshold" tokens; those calls use "rates" instead of models.
 # Cache writes are priced from the input rate by TTL: 5-minute = 1.25x, 1-hour = 2x.
 RATES='{
   "models": {
+    "claude-fable-5-2":  [8, 40, 0.20],
+    "claude-mythos-5-2": [8, 40, 0.20],
     "claude-fable-5-1":  [10, 50, 0.25],
     "claude-mythos-5-1": [10, 50, 0.25],
     "claude-fable-5":    [10, 50, 1.00],
@@ -36,15 +40,21 @@ RATES='{
     "claude-opus-5-5":   [4, 20, 0.20],
     "claude-opus-5":     [5, 25, 0.50],
     "claude-opus-4":     [5, 25, 0.50],
-    "claude-sonnet-5-5": [2, 10, 0.20],
+    "claude-sonnet-5-5": [2, 10, 0.10],
     "claude-sonnet-5":   [2, 10, 0.20],
     "claude-sonnet-4":   [3, 15, 0.30],
+    "claude-haiku-5-5":  [0.10, 0.50, 0.01],
     "claude-haiku-4-5":  [1, 5, 0.10]
   },
   "fast_models": {
+    "claude-fable-5-2":  [16, 80, 0.40],
+    "claude-mythos-5-2": [16, 80, 0.40],
     "claude-opus-5-5":   [8, 40, 0.40],
     "claude-opus-5":     [10, 50, 1.00],
     "claude-opus-4-8":   [10, 50, 1.00]
+  },
+  "long_prompt": {
+    "claude-haiku-5-5":  {"threshold": 100000, "rates": [0.50, 2.50, 0.05]}
   },
   "cache_write_5m": 1.25,
   "cache_write_1h": 2
@@ -306,13 +316,16 @@ if [ -n "$transcript" ] && [ "$transcript" != "null" ] && [ -f "$transcript" ]; 
       | {i:(map(.i)|add//0), cc:(map(.cc)|add//0), cr:(map(.cr)|add//0), o:(map(.o)|add//0), n:length};
     # price each deduped assistant message by ITS OWN model (rate matched by longest id prefix)
     def rate_in($table; $model): ($table // {} | to_entries | map(select(.key as $k | $model | startswith($k))) | sort_by(.key | length) | last);
-    def rate_for($model; $speed): (if $speed == "fast" then rate_in($rates.fast_models; $model) else null end) // rate_in($rates.models; $model);
+    def long_rate($model; $prompt): (rate_in($rates.long_prompt; $model)
+      | if . != null and $prompt > .value.threshold then {key, value: .value.rates} else null end);
+    def rate_for($model; $speed; $prompt): (if $speed == "fast" then rate_in($rates.fast_models; $model) else null end)
+      // long_rate($model; $prompt) // rate_in($rates.models; $model);
     def cost_stats: group_by(.message.id)
       | map({i:(map(.message.usage.input_tokens//0)|max), cc:(map(.message.usage.cache_creation_input_tokens//0)|max), cr:(map(.message.usage.cache_read_input_tokens//0)|max), o:(map(.message.usage.output_tokens//0)|max),
              c5:(map(.message.usage.cache_creation.ephemeral_5m_input_tokens // 0)|max), c1:(map(.message.usage.cache_creation.ephemeral_1h_input_tokens // 0)|max),
              model:(.[0].message.model // ""), speed:(map(.message.usage.speed // empty) | first // "standard")})
       | map(if (.c5 == 0 and .c1 == 0 and .cc > 0) then . + {c5: .cc} else . end)
-      | map(. + {rate: rate_for(.model; .speed)})
+      | map(. + {rate: rate_for(.model; .speed; (.i + .cc + .cr))})
       | { cost: (map(select(.rate != null) | (.i*.rate.value[0] + .o*.rate.value[1] + .cr*.rate.value[2] + .c5*.rate.value[0]*$rates.cache_write_5m + .c1*.rate.value[0]*$rates.cache_write_1h) / 1e6) | add // 0),
           unknown: (map(select(.rate == null)) | length) };
     . as $all
