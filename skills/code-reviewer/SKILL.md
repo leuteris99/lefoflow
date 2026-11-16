@@ -45,7 +45,9 @@ This skill guides the agent in conducting professional and thorough code reviews
 1. **Identify Changes**:
     - Check status: `git status`
     - Read diffs: `git diff` (working tree) and/or `git diff --staged` (staged).
-2. **Preflight (Optional)**: If the changes are substantial, ask the user if they want to run `npm run preflight` before reviewing.
+
+2. **Learn about the Specs**: *(optional)*
+    - Search on the `/spec` for information for the changes that happened (if it exists)
 
 ### 3. In-Depth Analysis
 
@@ -57,7 +59,7 @@ Analyze the code changes based on the following pillars:
 - **Efficiency**: Are there any obvious performance bottlenecks or resource inefficiencies introduced by the changes?
 - **Security**: Are there any potential security vulnerabilities or insecure coding practices?
 - **Edge Cases and Error Handling**: Does the code appropriately handle edge cases and potential errors?
-- **Testability**: Is the new or modified code adequately covered by tests (even if preflight checks pass)? Suggest additional test cases that would improve coverage or robustness.
+- **Testability**: Is the new or modified code adequately covered by tests? Suggest additional test cases that would improve coverage or robustness.
 
 ### 4. Provide Feedback
 
@@ -74,8 +76,9 @@ Analyze the code changes based on the following pillars:
 
 - Be constructive, professional, and friendly.
 - Explain _why_ a change is requested.
+- For the more important findings be more detailed on both the issue and the solution.
 - For approvals, acknowledge the specific value of the contribution.
 
 ### 5. Cleanup (Remote PRs only)
 
-- After the review, ask the user if they want to switch back to the default branch (e.g., `main` or `master`).
+- After the review, ask the user if they want to switch back to the prior active branch.
